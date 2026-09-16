@@ -42,22 +42,21 @@ IDs are positive safe integers. Invalid date filters return HTTP 400; a valid da
 
 ## Fetching the API from pages
 
-Meeting pages call the API through `lib/meetings-api.ts`. They render dynamically, so a production build does not require a running copy of the API. Request-time fetches use `cache: "no-store"`.
+Meeting pages render their API results through the typed Client Components in `components/MeetingApiViews.tsx`. After hydration, they call `/api/meetings` and `/api/meetings/[id]` through `lib/meetings-api.ts`, using `cache: "no-store"` and same-origin credentials. The API handlers remain server-side and read the in-memory module.
 
-Server-side fetches require an absolute URL. The default is `http://127.0.0.1:3000`, or the port in `PORT`. Set `MEETINGS_API_ORIGIN` to a trusted, reachable origin when deploying, especially on serverless hosting. The origin is never derived from a request's Host header.
+Relative browser URLs automatically follow the current domain and port, including each Vercel branch preview, and include the visitor's session cookies on protected previews. There is no server-side call to `127.0.0.1:3000`, and no `MEETINGS_API_ORIGIN` environment variable is required or used. An old value for that variable can be removed from Vercel settings.
 
 For a different local port in PowerShell:
 
 ```powershell
 $env:PORT = "3001"
-$env:MEETINGS_API_ORIGIN = "http://127.0.0.1:3001"
 npm run dev
 ```
 
-If Next.js automatically chooses another port because 3000 is occupied, set these variables explicitly to the port you intend to use. A failed API request displays a retry action; malformed and absent meeting links display a not-found view. `app/meetings/loading.tsx` supplies the route-level loading state, which may be too brief to see with in-memory data.
+If Next.js automatically chooses another port because 3000 is occupied, API calls follow that port too. The client views show a loading state while fetching, a retry action on failure, and an unavailable view for an absent meeting. Requests are cancelled when the view changes, so a previous date filter cannot overwrite the new results. `app/meetings/loading.tsx` also supplies the route-level loading state. Programme data requires browser JavaScript; the page shell and navigation are server-rendered.
 
 # Vercel Deployment:
-https://sacrament-meetings-h1c5p7xp6-emrys5.vercel.app/
+https://sacrament-meetings-blond.vercel.app
 
 ## Quality checks
 

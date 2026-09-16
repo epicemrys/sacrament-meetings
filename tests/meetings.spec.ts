@@ -85,6 +85,40 @@ test("item API distinguishes found, malformed, missing, and unsupported requests
   expect((await request.post("/api/meetings")).status()).toBe(405);
 });
 
+test("meeting views fetch from the browser's deployment origin with its session", async ({ page, context, baseURL }) => {
+  if (!baseURL) throw new Error("A test deployment URL is required.");
+  await context.addCookies([{ name: "test-preview-session", value: "local-test-session", url: baseURL, httpOnly: true }]);
+  for (const path of ["/meetings", "/meetings/5"]) {
+    const apiPath = path === "/meetings" ? "/api/meetings" : "/api/meetings/5";
+    const apiRequest = page.waitForRequest((request) => new URL(request.url()).pathname === apiPath);
+    await page.goto(path);
+    const request = await apiRequest;
+    expect(new URL(request.url()).origin).toBe(baseURL);
+    expect((await request.allHeaders()).cookie).toContain("test-preview-session=local-test-session");
+    if (path === "/meetings") await expect(page.locator(".meeting-card")).toHaveCount(7);
+    else await expect(page.getByRole("button", { name: "Print programme" })).toBeVisible();
+  }
+});
+
+test("meeting views show loading and can retry a failed API request", async ({ page }) => {
+  for (const path of ["/meetings", "/meetings/5"]) {
+    const apiPath = path === "/meetings" ? "/api/meetings" : "/api/meetings/5";
+    let releaseRequest: () => void = () => {};
+    const released = new Promise<void>((resolve) => { releaseRequest = resolve; });
+    await page.route(`**${apiPath}`, async (route) => {
+      await released;
+      await route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ error: "Temporary test failure" }) });
+    }, { times: 1 });
+    await page.goto(path);
+    await expect(page.getByRole("status")).toContainText("Loading meeting programme");
+    releaseRequest();
+    await expect(page.getByRole("main").getByRole("alert")).toContainText("Unable to load the programme");
+    await page.getByRole("button", { name: "Please try again" }).click();
+    if (path === "/meetings") await expect(page.locator(".meeting-card")).toHaveCount(7);
+    else await expect(page.getByRole("button", { name: "Print programme" })).toBeVisible();
+  }
+});
+
 test("internal navigation, keyboard skip link and active states work", async ({ page }) => {
   await page.goto("/");
   await expect(page.getByRole("link", { name: "Bariga Ward home" })).toBeVisible();
@@ -156,6 +190,8 @@ for (const width of [1440, 390]) {
     for (const [name, path] of [["home", "/"], ["meetings", "/meetings"], ["agenda", "/meetings/5"], ["not-found", "/meetings/99999"], ["empty", "/meetings?date=2030-01-06"]]) {
       await page.goto(path);
       await expect(page.locator("main h1")).toBeVisible();
+      if (name === "meetings") await expect(page.locator(".meeting-card")).toHaveCount(7);
+      if (name === "empty") await expect(page.getByRole("heading", { name: "No meeting scheduled for this date" })).toBeVisible();
       const results = await new AxeBuilder({ page }).withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22aa"]).analyze();
       expect(results.violations, `${name}: ${JSON.stringify(results.violations)}`).toEqual([]);
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);

@@ -18,7 +18,8 @@ export default defineConfig({
   webServer: {
     command: "npm run start -- --port 3100",
     url: "http://127.0.0.1:3100",
-    env: { PORT: "3100", MEETINGS_API_ORIGIN: "http://127.0.0.1:3100" },
+    // Run away from localhost:3000 without an API origin override, as previews do.
+    env: { PORT: "3100", MEETINGS_API_ORIGIN: "" },
     reuseExistingServer: false,
     timeout: 120_000,
   },
