@@ -56,6 +56,9 @@ npm run dev
 
 If Next.js automatically chooses another port because 3000 is occupied, set these variables explicitly to the port you intend to use. A failed API request displays a retry action; malformed and absent meeting links display a not-found view. `app/meetings/loading.tsx` supplies the route-level loading state, which may be too brief to see with in-memory data.
 
+# Vercel Deployment:
+https://sacrament-meetings-h1c5p7xp6-emrys5.vercel.app/
+
 ## Quality checks
 
 ```sh
