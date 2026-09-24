@@ -2,7 +2,8 @@ export type MeetingType =
   | 'testimony'
   | 'regular'
   | 'stake'
-  | 'general';
+  | 'general'
+  | 'special'; // matches the CHECK constraint on meetings.meeting_type
 
 export interface Hymn {
   number: number;

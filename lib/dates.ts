@@ -25,6 +25,8 @@ export function formatMeetingDate(date: string): string {
 
 export function isValidDate(date: string): boolean {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return false;
+  // JavaScript has a year 0 but Postgres dates don't, so reject it here.
+  if (date.startsWith("0000")) return false;
   const parsed = new Date(`${date}T12:00:00Z`);
   return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === date;
 }

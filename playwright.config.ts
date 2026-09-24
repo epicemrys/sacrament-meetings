@@ -1,4 +1,8 @@
+import { existsSync } from "node:fs";
 import { defineConfig } from "@playwright/test";
+
+// Tests call lib/meetings-db directly, so they need POSTGRES_URL like the app does.
+if (existsSync(".env.local")) process.loadEnvFile(".env.local");
 
 export default defineConfig({
   testDir: "./tests",

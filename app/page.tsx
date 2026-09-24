@@ -8,7 +8,7 @@ import { WARD_NAME } from "@/lib/ward";
 
 export default async function Home(): Promise<ReactElement> {
   await connection();
-  const current = getCurrentMeeting();
+  const current = await getCurrentMeeting();
   return (
     <div className="page-shell py-10 sm:py-14">
       <section className="grid overflow-hidden rounded-3xl border border-line bg-paper lg:grid-cols-[1.1fr_1fr]" aria-labelledby="welcome-heading">

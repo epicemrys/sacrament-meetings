@@ -21,7 +21,7 @@ export default function MeetingCard({ meeting, isCurrent = false, isUpcoming = f
       </div>
       <h2 className="font-display text-2xl leading-snug"><Link href={`/meetings/${meeting.id}`} className="rounded-sm hover:underline"><time dateTime={meeting.date}>{formatMeetingDate(meeting.date)}</time></Link></h2>
       <p className="mt-4 text-sm text-muted">Conducting · {meeting.conducting}</p>
-      <p className="mt-3 flex-1 text-sm leading-7">{meeting.meetingType === "testimony" ? "An opportunity to your share testimony of Jesus Christ and His gospel." : speakers.map((speaker) => speaker.topic).join(" · ") || "View the full meeting programme."}</p>
+      <p className="mt-3 flex-1 text-sm leading-7">{meeting.meetingType === "testimony" ? "An opportunity to share your testimony of Jesus Christ and His gospel." : speakers.map((speaker) => speaker.topic).join(" · ") || "View the full meeting programme."}</p>
       <Link href={`/meetings/${meeting.id}`} aria-label={`View agenda for ${formatMeetingDate(meeting.date)}`} className="mt-6 inline-flex min-h-11 items-center justify-between border-t border-line pt-4 text-sm font-bold text-ink">View agenda <span aria-hidden="true">↗</span></Link>
     </article>
   );

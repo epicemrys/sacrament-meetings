@@ -16,7 +16,13 @@ export async function GET(
   if (id === null) {
     return NextResponse.json({ error: "Meeting ID must be a positive, safe integer." }, { status: 400 });
   }
-  const meeting = getMeetingById(id);
+  let meeting: SacramentMeeting | null;
+  try {
+    meeting = await getMeetingById(id);
+  } catch (error) {
+    console.error(`GET /api/meetings/${id} failed`, error);
+    return NextResponse.json({ error: "Meetings are temporarily unavailable. Please try again." }, { status: 503 });
+  }
   if (!meeting) {
     return NextResponse.json({ error: "Sorry, meeting not found." }, { status: 404 });
   }

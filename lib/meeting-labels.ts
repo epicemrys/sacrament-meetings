@@ -5,4 +5,5 @@ export const meetingTypeLabels: Record<MeetingType, string> = {
   testimony: "Fast & testimony meeting",
   stake: "Stake conference",
   general: "General conference",
+  special: "Special meeting",
 };
