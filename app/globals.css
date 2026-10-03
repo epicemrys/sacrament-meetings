@@ -1,26 +1,67 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #f7f6f1;
+  --foreground: #233c39;
+  --paper: #ffffff;
+  --muted: #57675e;
+  --sage: #e6ece3;
+  --line: #d8dfd6;
+  --gold: #80642d;
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+  --font-display: var(--font-lora);
+  --color-canvas: var(--background);
+  --color-ink: var(--foreground);
+  --color-paper: var(--paper);
+  --color-muted: var(--muted);
+  --color-sage: var(--sage);
+  --color-line: var(--line);
+  --color-gold: var(--gold);
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-geist-sans), Arial, Helvetica, sans-serif;
+}
+
+@layer components {
+  .page-shell { @apply mx-auto w-full max-w-6xl px-5 sm:px-8; }
+  .eyebrow { @apply text-xs font-bold uppercase tracking-[0.18em] text-gold; }
+  .button-primary { @apply inline-flex min-h-11 items-center justify-center gap-3 rounded-lg bg-ink px-5 py-3 text-sm font-semibold text-white transition-colors hover:bg-[#34574f]; }
+  .button-secondary { @apply inline-flex min-h-11 items-center justify-center gap-3 rounded-lg border border-ink bg-paper px-5 py-3 text-sm font-semibold text-ink transition-colors hover:bg-sage; }
+  .text-link { @apply rounded-sm font-medium underline decoration-current underline-offset-4 hover:text-gold; }
+  .agenda-heading { @apply border-b border-line pb-3 font-display text-xl; }
+}
+
+:focus-visible { outline: 3px solid #80642d; outline-offset: 4px; }
+button, a { -webkit-tap-highlight-color: transparent; }
+button { cursor: pointer; }
+.skip-link { position: fixed; top: 0.75rem; left: 1rem; z-index: 100; transform: translateY(-200%); background: white; padding: 0.8rem 1.2rem; border: 2px solid var(--foreground); border-radius: 0.5rem; }
+.skip-link:focus { transform: translateY(0); }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
+}
+
+@page { size: auto; margin: 12mm; }
+@media print {
+  body { background: white; color: black; font-size: 10pt; }
+  .no-print, .site-header, .site-footer { display: none !important; }
+  .page-shell { max-width: none; padding: 0; }
+  main, .meetings-content { padding: 0 !important; }
+  .print-programme { max-width: none; padding: 0; border: 0; border-radius: 0; }
+  .print-programme h1 { font-size: 22pt; }
+  .print-programme h2 { font-size: 13pt; break-after: avoid; }
+  .print-programme section { margin-top: 12pt; }
+  .print-programme p, .print-programme dd { line-height: 1.45; }
+  .agenda-row { grid-template-columns: 105pt 1fr; padding: 6pt 0; break-inside: avoid; }
+  .print-programme a { color: black; text-decoration: none; }
+  .print-programme .text-muted, .print-programme .eyebrow { color: #333; }
+  .meeting-card { break-inside: avoid; box-shadow: none; }
 }

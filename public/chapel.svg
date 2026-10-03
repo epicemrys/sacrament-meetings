@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="1080" viewBox="0 0 960 1080">
+  <defs><linearGradient id="sky" x2="0" y2="1"><stop stop-color="#dce8df"/><stop offset="1" stop-color="#f1eedc"/></linearGradient><linearGradient id="wall" x2="1" y2="1"><stop stop-color="#fff9e9"/><stop offset="1" stop-color="#d9d3bf"/></linearGradient><linearGradient id="ground" x2="0" y2="1"><stop stop-color="#b9c7ad"/><stop offset="1" stop-color="#779484"/></linearGradient></defs>
+  <path fill="url(#sky)" d="M0 0h960v1080H0z"/>
+  <circle cx="733" cy="251" r="120" fill="#fff8dd" opacity=".8"/>
+  <path d="M0 635Q130 520 260 624T530 606T960 607V1080H0" fill="#c9d4be"/>
+  <path d="M0 753Q170 674 390 749T960 710V1080H0" fill="url(#ground)"/>
+  <path d="M409 823 554 823 775 1080H201Z" fill="#dcd4b9"/>
+  <path d="M432 827 529 827 623 1080H302Z" fill="#eae2cb"/>
+  <g fill="#46675a"><ellipse cx="140" cy="648" rx="91" ry="151"/><ellipse cx="816" cy="627" rx="103" ry="169"/></g>
+  <g stroke="#5b6751" stroke-width="14"><path d="M140 658v187M816 642v184"/></g>
+  <g fill="#6f8c71"><ellipse cx="67" cy="735" rx="81" ry="103"/><ellipse cx="911" cy="733" rx="98" ry="117"/></g>
+  <path d="M229 606H729V815H229Z" fill="#b6bba8"/>
+  <path d="M206 604 375 452 747 604Z" fill="#3f5b50"/>
+  <path d="M308 577 481 421 654 577V836H308Z" fill="url(#wall)"/>
+  <path d="M282 578 481 397 680 578 660 598 481 439 302 599Z" fill="#334e46"/>
+  <path d="M437 445V301H524V445Z" fill="#f6f0dc"/>
+  <path d="M427 305 480 210 534 305Z" fill="#426053"/>
+  <path d="M480 148V218" stroke="#426053" stroke-width="6"/>
+  <path d="M462 397V338Q480 312 498 338V397Z" fill="#688476"/>
+  <path d="M451 834V724Q481 680 511 724V834Z" fill="#426053"/>
+  <path d="M480 714V833" stroke="#96a58b" stroke-width="3"/>
+  <circle cx="494" cy="782" r="4" fill="#e4d1a0"/>
+  <g fill="#819d8e" stroke="#fbf5e5" stroke-width="9"><path d="M346 693V621Q368 591 390 621V693Z"/><path d="M572 693V621Q594 591 616 621V693Z"/></g>
+  <path d="M348 655H389M369 610V692M573 655H615M594 610V692" stroke="#f6f1df" stroke-width="5"/>
+  <path d="M438 835H525V851H438Z" fill="#babba8"/>
+  <g fill="#708768"><ellipse cx="273" cy="815" rx="63" ry="31"/><ellipse cx="649" cy="823" rx="76" ry="35"/></g>
+  <g fill="#f1ead3"><circle cx="251" cy="804" r="5"/><circle cx="281" cy="817" r="5"/><circle cx="632" cy="813" r="5"/><circle cx="669" cy="818" r="5"/></g>
+  <path d="M0 1010Q101 931 238 989L196 1080H0M960 967Q846 914 718 1004L776 1080H960" fill="#42665b"/>
+</svg>
