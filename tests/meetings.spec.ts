@@ -1,14 +1,26 @@
 import { expect, test } from "@playwright/test";
 import AxeBuilder from "@axe-core/playwright";
-import { countMeetings, getCurrentMeeting, getMeetingById, getMeetings } from "../lib/meetings-db";
-import { getMostRecentSunday, getWardDate, isValidDate } from "../lib/dates";
+import { addMeeting, countMeetings, deleteMeeting, getCurrentMeeting, getMeetingById, getMeetings } from "../lib/meetings-db";
+import { formatMeetingDate, getThisSunday, getWardDate, isValidDate } from "../lib/dates";
 import { getTotalPages, MEETINGS_PAGE_SIZE, parsePage } from "../lib/pagination";
 import type { ApiError, SacramentMeeting } from "../lib/types";
 
 // These tests read the seeded Neon database. IDs come from SERIAL, so look them up by date.
-const REGULAR_DATE = "2026-02-08"; // speakers, a musical number and announcements
-const TESTIMONY_DATE = "2026-01-04"; // testimony meeting with no ward business
-const NO_ANNOUNCEMENTS_DATE = "2026-03-08";
+// The seed runs weekly from 4 October to 6 December 2026.
+const REGULAR_DATE = "2026-11-08"; // speakers, a musical number and announcements
+const TESTIMONY_DATE = "2026-10-04"; // testimony meeting with no ward business
+const NO_ANNOUNCEMENTS_DATE = "2026-11-15";
+// The ordering test adds its own upcoming meeting here and deletes it afterwards.
+const ORDERING_TEST_DATE = "2099-12-13";
+// Form tests create meetings on these far-future Sundays and always delete them afterwards.
+const FORM_TEST_DATE = "2099-12-27";
+const FORM_TEST_EDITED_DATE = "2099-12-20";
+
+async function deleteFormTestMeetings(): Promise<void> {
+  for (const date of [FORM_TEST_DATE, FORM_TEST_EDITED_DATE]) {
+    for (const meeting of await getMeetings({ date })) await deleteMeeting(meeting.id);
+  }
+}
 
 // /meetings shows one page of cards, so a full list only fills the first page.
 async function firstPageCount(): Promise<number> {
@@ -22,11 +34,16 @@ async function meetingIdFor(date: string): Promise<number> {
 }
 
 test("Sunday lookup respects the ward date, week and year boundaries, and missing records", async () => {
-  expect(getMostRecentSunday(new Date("2026-09-16T12:00:00Z"))).toBe("2026-09-13");
-  expect(getMostRecentSunday(new Date("2026-09-12T23:30:00Z"))).toBe("2026-09-13");
-  expect(getMostRecentSunday(new Date("2026-09-12T22:30:00Z"))).toBe("2026-09-06");
-  expect(getMostRecentSunday(new Date("2026-01-01T10:00:00Z"))).toBe("2025-12-28");
-  expect((await getCurrentMeeting(new Date("2026-02-11T12:00:00Z")))?.date).toBe(REGULAR_DATE);
+  // "This Sunday" is the Sunday ending the current week: the coming Sunday, or today on a Sunday.
+  expect(getThisSunday(new Date("2026-09-16T12:00:00Z"))).toBe("2026-09-20"); // Wednesday
+  expect(getThisSunday(new Date("2026-10-03T12:00:00Z"))).toBe("2026-10-04"); // Saturday
+  expect(getThisSunday(new Date("2026-09-13T12:00:00Z"))).toBe("2026-09-13"); // Sunday itself
+  // Bariga is UTC+1, so these UTC times fall on the other side of the ward's midnight.
+  expect(getThisSunday(new Date("2026-09-12T23:30:00Z"))).toBe("2026-09-13"); // already Sunday in Bariga
+  expect(getThisSunday(new Date("2026-09-13T22:30:00Z"))).toBe("2026-09-13"); // still Sunday in Bariga
+  expect(getThisSunday(new Date("2026-09-13T23:30:00Z"))).toBe("2026-09-20"); // Monday in Bariga
+  expect(getThisSunday(new Date("2026-12-30T10:00:00Z"))).toBe("2027-01-03"); // across the year end
+  expect((await getCurrentMeeting(new Date("2026-11-04T12:00:00Z")))?.date).toBe(REGULAR_DATE);
   expect(await getCurrentMeeting(new Date("2030-01-01T12:00:00Z"))).toBeNull();
   expect(isValidDate("2026-02-30")).toBe(false);
   expect(isValidDate("2028-02-29")).toBe(true);
@@ -40,26 +57,56 @@ test("changing a query result does not change later results", async () => {
   expect((await getMeetingById(copy[0].id))?.openingHymn.title).not.toBe("Changed");
 });
 
-test("programme ordering puts the most recent past date before future dates", async () => {
-  const dates = (await getMeetings({}, new Date("2026-02-11T12:00:00Z"))).map((meeting) => meeting.date);
-  expect(dates).toEqual([
-    "2026-02-08", "2026-02-01", "2026-01-25", "2026-01-18", "2026-01-11", "2026-01-04",
-    "2026-02-15", "2026-02-22", "2026-03-01", "2026-03-08",
-  ]);
-  // Saturday UTC is already Sunday in Bariga; that programme now comes first.
-  expect((await getMeetings({}, new Date("2026-02-14T23:30:00Z")))[0].date).toBe("2026-02-15");
-  expect((await getMeetings({}, new Date("2026-01-01T12:00:00Z")))[0].date).toBe("2026-01-04");
-  expect((await getMeetings({}, new Date("2030-01-01T12:00:00Z")))[0].date).toBe("2026-03-08");
+// The list order, worked out independently of the SQL: this Sunday, then upcoming (nearest first), then past (newest first).
+function expectedOrder(dates: string[], now: Date): string[] {
+  const today = getWardDate(now);
+  const sunday = getThisSunday(now);
+  const others = dates.filter((date) => date !== sunday);
+  return [
+    ...dates.filter((date) => date === sunday),
+    ...others.filter((date) => date > today).sort(),
+    ...others.filter((date) => date <= today).sort().reverse(),
+  ];
+}
+
+test("programme ordering puts this Sunday first, then upcoming dates, then past dates", async () => {
+  for (const meeting of await getMeetings({ date: ORDERING_TEST_DATE })) await deleteMeeting(meeting.id);
+  const template = await getMeetingById(await meetingIdFor(REGULAR_DATE));
+  if (!template) throw new Error("The seed data must include the regular meeting.");
+  const fixture = await addMeeting({ ...template, date: ORDERING_TEST_DATE });
+  try {
+    const all = (await getMeetings()).map((meeting) => meeting.date);
+    const wednesday = new Date("2026-11-11T12:00:00Z"); // this Sunday is 15 November
+    const nows = [wednesday, new Date("2026-11-08T12:00:00Z"), new Date("2026-10-03T12:00:00Z"), new Date(), new Date("2030-01-01T12:00:00Z")];
+    for (const now of nows) {
+      const dates = (await getMeetings({}, now)).map((meeting) => meeting.date);
+      expect(dates).toEqual(expectedOrder(all, now));
+      // Upcoming meetings follow this Sunday directly, so the nearest ones are always on page 1.
+      expect((await getMeetings({ page: 1 }, now)).map((meeting) => meeting.date)).toEqual(dates.slice(0, MEETINGS_PAGE_SIZE));
+    }
+    const dates = (await getMeetings({}, wednesday)).map((meeting) => meeting.date);
+    expect(dates.slice(0, 2)).toEqual(["2026-11-15", "2026-11-22"]);
+    expect(dates.indexOf(ORDERING_TEST_DATE)).toBeLessThan(dates.indexOf("2026-11-08")); // upcoming before past
+    const first = async (now: string): Promise<string> => (await getMeetings({}, new Date(now)))[0].date;
+    expect(await first("2026-11-08T12:00:00Z")).toBe("2026-11-08"); // on Sunday, today's meeting is this Sunday
+    expect(await first("2026-10-03T12:00:00Z")).toBe("2026-10-04"); // on Saturday, tomorrow's meeting is this Sunday
+    expect(await first("2026-11-14T23:30:00Z")).toBe("2026-11-15"); // Saturday UTC is already Sunday in Bariga
+    expect(await first("2026-11-15T23:30:00Z")).toBe("2026-11-22"); // Sunday UTC is already Monday in Bariga
+    expect(await first("2026-09-23T12:00:00Z")).toBe("2026-10-04"); // no meeting this Sunday: the next one leads
+    expect(await first("2030-01-01T12:00:00Z")).toBe(ORDERING_TEST_DATE);
+  } finally {
+    await deleteMeeting(fixture.id);
+  }
 });
 
 test("search matches speakers, leaders and meeting type, and treats wildcards as text", async () => {
   const dates = async (query: string, date?: string): Promise<string[]> =>
     (await getMeetings({ query, date })).map((meeting) => meeting.date).sort();
-  expect(await dates("favour")).toEqual(["2026-01-11"]); // speaker name, any case
-  expect(await dates("Gimenez")).toEqual(["2026-01-25"]); // presiding leader
-  expect(await dates("testimony")).toEqual(["2026-01-04", "2026-02-01", "2026-03-01"]);
-  expect(await dates("Benjamin", "2026-03-08")).toEqual(["2026-03-08"]);
-  expect(await dates("Benjamin", "2026-02-08")).toEqual([]);
+  expect(await dates("favour")).toEqual(["2026-10-11"]); // speaker name, any case
+  expect(await dates("Gimenez")).toEqual(["2026-10-25"]); // presiding leader
+  expect(await dates("testimony")).toEqual(["2026-10-04", "2026-11-01", "2026-12-06"]);
+  expect(await dates("Benjamin", "2026-10-18")).toEqual(["2026-10-18"]);
+  expect(await dates("Benjamin", REGULAR_DATE)).toEqual([]);
   expect(await dates("%")).toEqual([]);
   expect(await getMeetings({ query: "   " })).toHaveLength((await getMeetings()).length);
 });
@@ -204,7 +251,11 @@ test("programme ordering reads left to right on desktop and tablet, top to botto
     const cards = page.locator(".meeting-card");
     await expect(cards).toHaveCount(meetings.length);
     expect(await cards.locator("time").evaluateAll((elements) => elements.map((element) => element.getAttribute("datetime")))).toEqual(expectedDates);
-    await expect(cards.filter({ hasText: "Upcoming" })).toHaveCount(meetings.filter((meeting) => meeting.date > getWardDate()).length);
+    // This Sunday's card is tagged "This Sunday" only; later dates are "Upcoming".
+    const sunday = getThisSunday();
+    await expect(cards.filter({ hasText: "This Sunday" })).toHaveCount(meetings.filter((meeting) => meeting.date === sunday).length);
+    await expect(cards.filter({ hasText: "Upcoming" })).toHaveCount(meetings.filter((meeting) => meeting.date !== sunday && meeting.date > getWardDate()).length);
+    if (meetings.some((meeting) => meeting.date === sunday)) await expect(cards.first()).toContainText("This Sunday");
     const first = await cards.nth(0).boundingBox();
     const second = await cards.nth(1).boundingBox();
     if (!first || !second) throw new Error("Programme cards must be visible.");
@@ -231,7 +282,7 @@ test("collection API returns typed records and filters by date", async ({ reques
   expect(result[0].date).toBe(TESTIMONY_DATE);
   expect(await (await request.get("/api/meetings?date=2030-01-06")).json()).toEqual([]);
   const searched: SacramentMeeting[] = await (await request.get("/api/meetings?query=Gimenez")).json();
-  expect(searched.map((meeting) => meeting.date)).toEqual(["2026-01-25"]);
+  expect(searched.map((meeting) => meeting.date)).toEqual(["2026-10-25"]);
   for (const date of ["", "not-a-date", "2026-02-30", "2026-5-3", "0000-01-01"]) {
     expect((await request.get(`/api/meetings?date=${date}`)).status()).toBe(400);
   }
@@ -300,7 +351,7 @@ test("internal navigation, keyboard skip link and active states work", async ({ 
   await expect(page.getByRole("navigation", { name: "Main navigation" }).getByRole("link", { name: "Meetings", exact: true })).toHaveAttribute("aria-current", "page");
   await expect(page.getByRole("navigation", { name: "Main navigation" }).getByRole("link", { name: "Home" })).not.toHaveAttribute("aria-current");
   await expect(page.getByRole("navigation", { name: "Meetings navigation" }).getByRole("link", { name: "All meetings" })).toHaveAttribute("aria-current", "page");
-  await page.getByRole("link", { name: "View agenda for Sunday, 8 February 2026" }).click();
+  await page.getByRole("link", { name: `View agenda for ${formatMeetingDate(REGULAR_DATE)}` }).click();
   await expect(page.getByRole("heading", { name: "Sacrament meeting", exact: true })).toBeVisible();
   await expect(page.getByText("Following the Saviour through service")).toBeVisible();
   await expect(page.getByText("Musical number", { exact: true })).toBeVisible();
@@ -329,14 +380,147 @@ test("date filter, empty result, invalid date and unavailable meeting states", a
   await expect(page.getByText("No announcements for this meeting.")).toBeVisible();
 });
 
-test("admin placeholder routes resolve alongside the public meeting routes", async ({ page }) => {
-  await page.goto("/meetings/new");
-  await expect(page.getByRole("heading", { level: 1, name: "Create Meeting — Coming in Week 04" })).toBeVisible();
-  await page.goto(`/meetings/${await meetingIdFor(REGULAR_DATE)}/edit`);
-  await expect(page.getByRole("heading", { level: 1, name: "Edit Meeting — Coming in Week 04" })).toBeVisible();
+test.describe("leader forms", () => {
+  test.beforeAll(deleteFormTestMeetings);
+  test.afterAll(deleteFormTestMeetings);
+
+  test("create form validates on the server, announces field errors, and keeps what was typed", async ({ page }) => {
+    await page.goto("/meetings");
+    await page.getByRole("link", { name: "New meeting" }).click();
+    await expect(page.getByRole("heading", { level: 1, name: "Create meeting" })).toBeVisible();
+
+    await page.getByRole("button", { name: "Create meeting" }).click();
+    await expect(page.getByText(/The meeting was not saved\. Fix the \d+ fields marked below/)).toBeVisible();
+    const date = page.getByLabel("Date", { exact: true });
+    // Focus moves to the first invalid field, which points at its live error container.
+    await expect(date).toBeFocused();
+    await expect(date).toHaveAttribute("aria-invalid", "true");
+    await expect(date).toHaveAttribute("aria-describedby", "date-hint date-error");
+    await expect(page.locator("#date-error")).toHaveAttribute("aria-live", "polite");
+    await expect(page.locator("#date-error")).toContainText("Enter the meeting date.");
+    await expect(page.locator("#presiding-error")).toContainText("Enter who is presiding.");
+    await expect(page.locator("#openingHymnNumber-error")).toHaveText("Error: Enter the opening hymn number.");
+
+    await date.fill("2099-12-21"); // a Monday
+    await page.getByLabel("Presiding").fill("Bishop Test");
+    await page.getByLabel("Opening hymn number").fill("0");
+    await page.getByRole("button", { name: "Add speaker" }).click();
+    await expect(page.getByLabel("Name")).toBeFocused();
+    await page.getByLabel("Name").fill("Sister Test");
+    await page.getByRole("button", { name: "Create meeting" }).click();
+    await expect(page.locator("#date-error")).toContainText("Choose a Sunday.");
+    await expect(page.locator("#openingHymnNumber-error")).toContainText("whole number from 1 to 9999");
+    await expect(page.getByRole("group", { name: "Programme item 1" }).getByText("Enter the speaker's topic.")).toBeVisible();
+    // Fixed fields lose their errors, and typed values survive the round trip.
+    await expect(page.locator("#presiding-error")).toBeEmpty();
+    await expect(page.getByLabel("Presiding")).not.toHaveAttribute("aria-invalid");
+    await expect(page.getByLabel("Presiding")).toHaveValue("Bishop Test");
+    await expect(page.getByLabel("Name")).toHaveValue("Sister Test");
+
+    const results = await new AxeBuilder({ page }).withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22aa"]).analyze();
+    expect(results.violations, JSON.stringify(results.violations)).toEqual([]);
+
+    await date.fill(FORM_TEST_DATE);
+    await page.getByLabel("Meeting type").selectOption("regular");
+    await page.getByLabel("Conducting").fill("Brother Test");
+    await page.getByLabel("Opening hymn number").fill("2");
+    await page.getByLabel("Opening hymn title").fill("The Spirit of God");
+    await page.getByLabel("Opening prayer").fill("Sister Opening");
+    await page.getByLabel("Ward business").fill("Sustaining a test teacher\n\n");
+    await page.getByLabel("Sacrament hymn number").fill("169");
+    await page.getByLabel("Sacrament hymn title").fill("As Now We Take the Sacrament");
+    await page.getByLabel("Topic or selection").fill("Testing with faith");
+    await page.getByLabel("Closing hymn number").fill("152");
+    await page.getByLabel("Closing hymn title").fill("God Be with You Till We Meet Again");
+    await page.getByLabel("Closing prayer").fill("Brother Closing");
+    await page.getByLabel("Announcements").fill("First test announcement\nSecond test announcement");
+    await page.getByRole("button", { name: "Create meeting" }).click();
+
+    await expect(page).toHaveURL(/\/meetings$/);
+    const [created] = await getMeetings({ date: FORM_TEST_DATE });
+    expect(created).toMatchObject({
+      meetingType: "regular", presiding: "Bishop Test", conducting: "Brother Test",
+      openingHymn: { number: 2, title: "The Spirit of God" },
+      wardBusiness: [{ description: "Sustaining a test teacher" }],
+      speakers: [{ type: "speaker", name: "Sister Test", topic: "Testing with faith" }],
+      announcements: ["First test announcement", "Second test announcement"],
+    });
+    await page.goto(`/meetings?date=${FORM_TEST_DATE}`);
+    await expect(page.locator(".meeting-card")).toHaveCount(1);
+  });
+
+  test("a second meeting on the same Sunday is rejected with a field error", async ({ page }) => {
+    const [existing] = await getMeetings({ date: FORM_TEST_DATE });
+    if (!existing) throw new Error("The create test must run first.");
+    const regularId = await meetingIdFor(REGULAR_DATE);
+    await page.goto(`/meetings/${regularId}/edit`);
+    await page.getByLabel("Date", { exact: true }).fill(FORM_TEST_DATE);
+    await page.getByRole("button", { name: "Save changes" }).click();
+    await expect(page.locator("#date-error")).toContainText("A meeting already exists on this date.");
+    expect((await getMeetingById(regularId))?.date).toBe(REGULAR_DATE);
+  });
+
+  test("edit form loads the saved meeting, keeps references, and the list shows the change", async ({ page }) => {
+    const [meeting] = await getMeetings({ date: FORM_TEST_DATE });
+    if (!meeting) throw new Error("The create test must run first.");
+    await page.goto(`/meetings?date=${FORM_TEST_DATE}`);
+    await page.getByRole("link", { name: /^Edit meeting on/ }).click();
+    await expect(page.getByRole("heading", { level: 1, name: "Edit meeting" })).toBeVisible();
+    await expect(page.getByLabel("Presiding")).toHaveValue("Bishop Test");
+
+    await page.getByLabel("Conducting").fill("");
+    await page.getByLabel("Reference link").fill("javascript:alert(1)");
+    await page.getByRole("button", { name: "Save changes" }).click();
+    await expect(page.locator("#conducting-error")).toContainText("Enter who is conducting.");
+    await expect(page.getByText("Enter a full link that starts with https://.")).toBeVisible();
+    await expect(page.getByText("Enter a title for this link.")).toBeVisible();
+
+    await page.getByLabel("Date", { exact: true }).fill(FORM_TEST_EDITED_DATE);
+    await page.getByLabel("Conducting").fill("Sister Edited");
+    await page.getByLabel("Reference title").fill("Mosiah 2:17");
+    await page.getByLabel("Reference link").fill("https://www.churchofjesuschrist.org/study/scriptures/bofm/mosiah/2?lang=eng&id=p17#p17");
+    await page.getByRole("button", { name: "Add musical number" }).click();
+    await page.getByRole("group", { name: "Programme item 2" }).getByLabel("Name").fill("Test Choir");
+    await page.getByRole("button", { name: "Save changes" }).click();
+
+    await expect(page).toHaveURL(/\/meetings$/);
+    expect(await getMeetingById(meeting.id)).toMatchObject({
+      date: FORM_TEST_EDITED_DATE, conducting: "Sister Edited",
+      speakers: [
+        { name: "Sister Test", reference: { title: "Mosiah 2:17" } },
+        { type: "musical-number", name: "Test Choir", topic: "" },
+      ],
+    });
+    await page.goto(`/meetings?date=${FORM_TEST_EDITED_DATE}`);
+    await expect(page.locator(".meeting-card")).toContainText("Conducting · Sister Edited");
+  });
+
+  test("delete asks for confirmation and removes the card without leaving the list", async ({ page }) => {
+    await page.goto(`/meetings?date=${FORM_TEST_EDITED_DATE}`);
+    const deleteButton = page.getByRole("button", { name: /^Delete meeting on/ });
+    page.once("dialog", (dialog) => dialog.dismiss());
+    await deleteButton.click();
+    await expect(page.locator(".meeting-card")).toHaveCount(1);
+
+    page.once("dialog", (dialog) => dialog.accept());
+    await deleteButton.click();
+    await expect(page.getByRole("heading", { name: "No meeting scheduled for this date" })).toBeVisible();
+    await expect(page).toHaveURL(new RegExp(`/meetings\\?date=${FORM_TEST_EDITED_DATE}$`));
+    await expect(page.locator("#results-summary")).toBeFocused();
+    expect(await getMeetings({ date: FORM_TEST_EDITED_DATE })).toEqual([]);
+  });
+
+  test("editing a missing meeting shows the not-found page", async ({ page }) => {
+    for (const id of ["99999", "abc"]) {
+      await page.goto(`/meetings/${id}/edit`);
+      await expect(page.getByRole("heading", { level: 1, name: "Meeting not found" })).toBeVisible();
+      await page.getByRole("link", { name: "Back to all meetings" }).click();
+      await expect(page).toHaveURL(/\/meetings$/);
+    }
+  });
 });
 
-test("current route redirects to the most recent Sunday or the list", async ({ page }) => {
+test("current route redirects to this Sunday or the list", async ({ page }) => {
   const current = await getCurrentMeeting();
   await page.goto("/meetings/current");
   await expect(page).toHaveURL(new RegExp(`${current ? `/meetings/${current.id}` : "/meetings"}$`));
@@ -365,7 +549,7 @@ for (const width of [1440, 390]) {
     await page.setViewportSize({ width, height: 1000 });
     const id = await meetingIdFor(REGULAR_DATE);
     const total = await firstPageCount();
-    for (const [name, path] of [["home", "/"], ["meetings", "/meetings"], ["agenda", `/meetings/${id}`], ["not-found", "/meetings/99999"], ["empty", "/meetings?date=2030-01-06"]]) {
+    for (const [name, path] of [["home", "/"], ["meetings", "/meetings"], ["agenda", `/meetings/${id}`], ["not-found", "/meetings/99999"], ["empty", "/meetings?date=2030-01-06"], ["create", "/meetings/new"], ["edit", `/meetings/${id}/edit`], ["edit-not-found", "/meetings/99999/edit"]]) {
       await page.goto(path);
       await expect(page.locator("main h1")).toBeVisible();
       if (name === "meetings") await expect(page.locator(".meeting-card")).toHaveCount(total);

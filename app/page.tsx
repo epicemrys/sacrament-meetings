@@ -3,7 +3,7 @@ import Link from "next/link";
 import { connection } from "next/server";
 import type { ReactElement } from "react";
 import { getCurrentMeeting, gospelSources } from "@/lib/meetings-db";
-import { formatMeetingDate, getMostRecentSunday } from "@/lib/dates";
+import { formatMeetingDate, getThisSunday } from "@/lib/dates";
 import { WARD_NAME } from "@/lib/ward";
 
 export default async function Home(): Promise<ReactElement> {
@@ -22,7 +22,7 @@ export default async function Home(): Promise<ReactElement> {
         <div className="flex items-center bg-sage"><Image src="/chapel.svg" alt="Illustration of a welcoming chapel surrounded by trees in warm morning light" width={960} height={1080} sizes="(max-width: 1023px) 100vw, 50vw" preload className="h-auto w-full" /></div>
       </section>
       <section aria-labelledby="sunday-heading" className="my-10 grid gap-6 rounded-2xl bg-ink p-7 text-white sm:p-9 md:grid-cols-[1fr_auto] md:items-center">
-        <div><p className="text-xs font-semibold uppercase tracking-widest text-[#d4dfd3]">This week at a glance</p><h2 id="sunday-heading" className="mt-3 font-display text-2xl sm:text-3xl">{formatMeetingDate(getMostRecentSunday())}</h2><p className="mt-3 max-w-2xl leading-7 text-[#e4eae3]">{current ? `Conducting: ${current.conducting}. View the complete order of service, hymns, and messages.` : "A programme has not been added for this Sunday yet. Browse the available meeting dates."}</p></div>
+        <div><p className="text-xs font-semibold uppercase tracking-widest text-[#d4dfd3]">This week at a glance</p><h2 id="sunday-heading" className="mt-3 font-display text-2xl sm:text-3xl">{formatMeetingDate(getThisSunday())}</h2><p className="mt-3 max-w-2xl leading-7 text-[#e4eae3]">{current ? `Conducting: ${current.conducting}. View the complete order of service, hymns, and messages.` : "A programme has not been added for this Sunday yet. Browse the available meeting dates."}</p></div>
         <Link href={current ? `/meetings/${current.id}` : "/meetings"} className="inline-flex min-h-11 items-center justify-center gap-4 rounded-lg bg-white px-5 py-3 text-sm font-bold text-ink hover:bg-sage">{current ? "View full agenda" : "Browse programmes"}<span aria-hidden="true">→</span></Link>
       </section>
       <section aria-labelledby="prepare-heading" className="grid gap-8 border-t border-line py-8 md:grid-cols-2">

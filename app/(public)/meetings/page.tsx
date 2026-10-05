@@ -7,7 +7,7 @@ import MeetingLoading from "@/components/MeetingLoading";
 import { MeetingSearch } from "@/components/MeetingSearch";
 import { Pagination } from "@/components/Pagination";
 import { countMeetings, getMeetings, type MeetingFilters } from "@/lib/meetings-db";
-import { getMostRecentSunday, getWardDate, isValidDate } from "@/lib/dates";
+import { getThisSunday, getWardDate, isValidDate } from "@/lib/dates";
 import { getTotalPages, parsePage, RESULTS_SUMMARY_ID } from "@/lib/pagination";
 
 export const metadata: Metadata = { title: "Meetings" };
@@ -26,9 +26,9 @@ function EmptyResults({ searching }: { searching: boolean }): ReactElement {
 // Streams in under its own Suspense boundary so the skeleton shows while each page loads.
 async function MeetingGrid({ filters, page }: { filters: MeetingFilters; page: number }): Promise<ReactElement> {
   const meetings = await getMeetings({ ...filters, page });
-  const sunday = getMostRecentSunday();
+  const sunday = getThisSunday();
   const today = getWardDate();
-  return <div className="grid gap-5 md:grid-cols-2 lg:grid-cols-3">{meetings.map((meeting) => <MeetingCard key={meeting.id} meeting={meeting} isCurrent={meeting.date === sunday} isUpcoming={meeting.date > today} />)}</div>;
+  return <div className="grid gap-5 md:grid-cols-2 lg:grid-cols-3">{meetings.map((meeting) => <MeetingCard key={meeting.id} meeting={meeting} isCurrent={meeting.date === sunday} isUpcoming={meeting.date !== sunday && meeting.date > today} />)}</div>;
 }
 
 export default async function MeetingsPage({ searchParams }: MeetingsPageProps): Promise<ReactElement> {
@@ -47,7 +47,10 @@ export default async function MeetingsPage({ searchParams }: MeetingsPageProps):
     <>
       <div className="mb-8 flex flex-wrap items-end justify-between gap-6">
         <div><h1 className="font-display text-4xl sm:text-5xl">Meeting programmes</h1><p className="mt-4 max-w-xl leading-7 text-muted">Prepare for Sunday, follow along with the agenda, or revisit a previous meeting.</p></div>
-        <Link href="/meetings/current" className="button-primary no-print">This Sunday&apos;s programme <span aria-hidden="true">↗</span></Link>
+        <div className="no-print flex flex-wrap gap-3">
+          <Link href="/meetings/new" className="button-secondary">New meeting</Link>
+          <Link href="/meetings/current" className="button-primary">This Sunday&apos;s programme <span aria-hidden="true">↗</span></Link>
+        </div>
       </div>
       <div className="no-print mb-8 flex flex-wrap items-end gap-3 rounded-xl border border-line bg-paper p-4">
         <Suspense><MeetingSearch /></Suspense>
@@ -63,7 +66,7 @@ export default async function MeetingsPage({ searchParams }: MeetingsPageProps):
         {/* Rendered for every result, including none, so screen readers hear each change (WCAG 4.1.3). */}
         <p id={RESULTS_SUMMARY_ID} role="status" tabIndex={-1} className="mb-4 rounded-sm text-sm text-muted">
           {queryFilter ? `${programmes} matching “${queryFilter}”` : programmes}
-          {total > 0 && ` · Page ${currentPage} of ${totalPages} · Most recent meetings first; upcoming dates last`}
+          {total > 0 && ` · Page ${currentPage} of ${totalPages} · This Sunday first, then upcoming meetings, then past meetings`}
         </p>
         {total === 0 ? <EmptyResults searching={queryFilter !== undefined} /> : <>
           <Suspense key={`${dateFilter ?? ""}|${queryFilter ?? ""}|${currentPage}`} fallback={<MeetingLoading />}>
