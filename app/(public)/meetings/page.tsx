@@ -2,6 +2,7 @@ import Link from "next/link";
 import { connection } from "next/server";
 import type { Metadata } from "next";
 import { Suspense, type ReactElement } from "react";
+import { auth } from "@/auth";
 import MeetingCard from "@/components/MeetingCard";
 import MeetingLoading from "@/components/MeetingLoading";
 import { MeetingSearch } from "@/components/MeetingSearch";
@@ -10,7 +11,10 @@ import { countMeetings, getMeetings, type MeetingFilters } from "@/lib/meetings-
 import { getThisSunday, getWardDate, isValidDate } from "@/lib/dates";
 import { getTotalPages, parsePage, RESULTS_SUMMARY_ID } from "@/lib/pagination";
 
-export const metadata: Metadata = { title: "Meetings" };
+export const metadata: Metadata = {
+  title: "Meetings",
+  description: "Browse and search every sacrament meeting programme: this Sunday first, then upcoming and past meetings.",
+};
 interface MeetingsPageProps { searchParams: Promise<{ date?: string | string[]; query?: string | string[]; page?: string | string[] }> }
 
 function EmptyResults({ searching }: { searching: boolean }): ReactElement {
@@ -24,16 +28,18 @@ function EmptyResults({ searching }: { searching: boolean }): ReactElement {
 }
 
 // Streams in under its own Suspense boundary so the skeleton shows while each page loads.
-async function MeetingGrid({ filters, page }: { filters: MeetingFilters; page: number }): Promise<ReactElement> {
+async function MeetingGrid({ filters, page, canManage }: { filters: MeetingFilters; page: number; canManage: boolean }): Promise<ReactElement> {
   const meetings = await getMeetings({ ...filters, page });
   const sunday = getThisSunday();
   const today = getWardDate();
-  return <div className="grid gap-5 md:grid-cols-2 lg:grid-cols-3">{meetings.map((meeting) => <MeetingCard key={meeting.id} meeting={meeting} isCurrent={meeting.date === sunday} isUpcoming={meeting.date !== sunday && meeting.date > today} />)}</div>;
+  return <div className="grid gap-5 md:grid-cols-2 lg:grid-cols-3">{meetings.map((meeting) => <MeetingCard key={meeting.id} meeting={meeting} isCurrent={meeting.date === sunday} isUpcoming={meeting.date !== sunday && meeting.date > today} canManage={canManage} />)}</div>;
 }
 
 export default async function MeetingsPage({ searchParams }: MeetingsPageProps): Promise<ReactElement> {
   await connection();
   const { date, query, page } = await searchParams;
+  // Edit, delete and new-meeting controls are for signed-in leaders only.
+  const canManage = !!(await auth())?.user;
   const dateFilter = typeof date === "string" ? date : undefined;
   const queryFilter = typeof query === "string" && query.trim() ? query.trim() : undefined;
   const valid = date === undefined || (dateFilter !== undefined && isValidDate(dateFilter));
@@ -48,7 +54,8 @@ export default async function MeetingsPage({ searchParams }: MeetingsPageProps):
       <div className="mb-8 flex flex-wrap items-end justify-between gap-6">
         <div><h1 className="font-display text-4xl sm:text-5xl">Meeting programmes</h1><p className="mt-4 max-w-xl leading-7 text-muted">Prepare for Sunday, follow along with the agenda, or revisit a previous meeting.</p></div>
         <div className="no-print flex flex-wrap gap-3">
-          <Link href="/meetings/new" className="button-secondary">New meeting</Link>
+          {/* No prefetch, for the same sign-out reason as the Edit links in MeetingCard. */}
+          {canManage && <Link href="/meetings/new" prefetch={false} className="button-secondary">New meeting</Link>}
           <Link href="/meetings/current" className="button-primary">This Sunday&apos;s programme <span aria-hidden="true">↗</span></Link>
         </div>
       </div>
@@ -70,7 +77,7 @@ export default async function MeetingsPage({ searchParams }: MeetingsPageProps):
         </p>
         {total === 0 ? <EmptyResults searching={queryFilter !== undefined} /> : <>
           <Suspense key={`${dateFilter ?? ""}|${queryFilter ?? ""}|${currentPage}`} fallback={<MeetingLoading />}>
-            <MeetingGrid filters={filters} page={currentPage} />
+            <MeetingGrid filters={filters} page={currentPage} canManage={canManage} />
           </Suspense>
           <Suspense><Pagination totalPages={totalPages} /></Suspense>
         </>}

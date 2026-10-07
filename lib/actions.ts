@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
+import { requireLeader } from "@/lib/session";
 import { isValidDate, parseMeetingId } from "./dates";
 import { meetingTypes } from "./meeting-labels";
 import type { MeetingFieldErrors, MeetingFormState, MeetingFormValues } from "./meeting-form";
@@ -184,6 +185,7 @@ function revalidateMeetings(): void {
 }
 
 export async function createMeeting(prevState: MeetingFormState, formData: FormData): Promise<MeetingFormState> {
+  await requireLeader();
   const values = readMeetingForm(formData);
   const parsed = MeetingFormSchema.safeParse(values);
   if (!parsed.success) return invalidState(values, toFieldErrors(parsed.error));
@@ -199,6 +201,7 @@ export async function createMeeting(prevState: MeetingFormState, formData: FormD
 }
 
 export async function updateMeeting(id: number, prevState: MeetingFormState, formData: FormData): Promise<MeetingFormState> {
+  await requireLeader();
   const meetingId = parseMeetingId(String(id));
   const values = readMeetingForm(formData);
   if (meetingId === null) return { message: "This meeting link is not valid.", errors: {}, values };
@@ -220,6 +223,7 @@ export async function updateMeeting(id: number, prevState: MeetingFormState, for
 }
 
 export async function deleteMeeting(id: number): Promise<void> {
+  await requireLeader();
   const meetingId = parseMeetingId(String(id));
   if (meetingId === null) throw new Error("This meeting link is not valid.");
   try {

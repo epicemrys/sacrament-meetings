@@ -1,5 +1,5 @@
-import { neon } from "@neondatabase/serverless";
 import { getThisSunday, getWardDate } from "./dates";
+import { sql } from "./db";
 import { MEETINGS_PAGE_SIZE } from "./pagination";
 import type { GospelReference, Hymn, SacramentMeeting, SpeakerItem, WardBusinessItem } from "./types";
 
@@ -26,16 +26,6 @@ interface MeetingRow {
   speakers: SpeakerItem[] | null;
   closing_hymn: Hymn;
   closing_prayer: string;
-}
-
-let client: ReturnType<typeof neon> | null = null;
-function sql(): ReturnType<typeof neon> {
-  if (!client) {
-    const url = process.env.POSTGRES_URL;
-    if (!url) throw new Error("POSTGRES_URL is not set.");
-    client = neon(url);
-  }
-  return client;
 }
 
 function toMeeting(row: MeetingRow): SacramentMeeting {

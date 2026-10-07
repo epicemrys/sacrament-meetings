@@ -6,12 +6,18 @@ import { EditMeetingForm } from "@/components/MeetingForm";
 import { formatMeetingDate, parseMeetingId } from "@/lib/dates";
 import { toMeetingFormValues } from "@/lib/meeting-form";
 import { getMeetingById } from "@/lib/meetings-db";
+import { requireLeader } from "@/lib/session";
 
-export const metadata: Metadata = { title: "Edit meeting" };
+export const metadata: Metadata = {
+  title: "Edit meeting",
+  description: "Update a sacrament meeting programme.",
+  robots: { index: false },
+};
 interface EditMeetingPageProps { params: Promise<{ id: string }> }
 
 export default async function EditMeetingPage({ params }: EditMeetingPageProps): Promise<ReactElement> {
   const { id: rawId } = await params;
+  await requireLeader(`/meetings/${encodeURIComponent(rawId)}/edit`);
   const id = parseMeetingId(rawId);
   if (id === null) notFound();
   // A database failure throws here and is shown by error.tsx.

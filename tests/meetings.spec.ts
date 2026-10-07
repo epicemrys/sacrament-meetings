@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 import AxeBuilder from "@axe-core/playwright";
 import { addMeeting, countMeetings, deleteMeeting, getCurrentMeeting, getMeetingById, getMeetings } from "../lib/meetings-db";
 import { formatMeetingDate, getThisSunday, getWardDate, isValidDate } from "../lib/dates";
@@ -25,6 +25,17 @@ async function deleteFormTestMeetings(): Promise<void> {
 // /meetings shows one page of cards, so a full list only fills the first page.
 async function firstPageCount(): Promise<number> {
   return Math.min(await countMeetings(), MEETINGS_PAGE_SIZE);
+}
+
+// The leader account comes from .env.local; create it with `npm run seed:user`.
+async function signIn(page: Page): Promise<void> {
+  const { ADMIN_EMAIL, ADMIN_PASSWORD } = process.env;
+  if (!ADMIN_EMAIL || !ADMIN_PASSWORD) throw new Error("Set ADMIN_EMAIL and ADMIN_PASSWORD in .env.local.");
+  await page.goto("/login");
+  await page.getByLabel("Email").fill(ADMIN_EMAIL);
+  await page.getByLabel("Password").fill(ADMIN_PASSWORD);
+  await page.getByRole("button", { name: "Sign in" }).click();
+  await expect(page).toHaveURL(/\/meetings$/);
 }
 
 async function meetingIdFor(date: string): Promise<number> {
@@ -380,9 +391,67 @@ test("date filter, empty result, invalid date and unavailable meeting states", a
   await expect(page.getByText("No announcements for this meeting.")).toBeVisible();
 });
 
+test("leader pages redirect to sign in, and sign in and sign out complete the round trip", async ({ page }) => {
+  const id = await meetingIdFor(REGULAR_DATE);
+  // Signed out: no leader controls, and each leader page redirects to /login.
+  await page.goto("/meetings");
+  await expect(page.getByRole("link", { name: "New meeting" })).toHaveCount(0);
+  await expect(page.getByRole("link", { name: /^Edit meeting on/ })).toHaveCount(0);
+  for (const path of ["/meetings/new", `/meetings/${id}/edit`]) {
+    await page.goto(path);
+    await expect(page).toHaveURL(/\/login\?callbackUrl=/);
+    await expect(page.getByRole("heading", { level: 1, name: "Sign in" })).toBeVisible();
+  }
+
+  // A wrong password stays on the form with an error.
+  await page.getByLabel("Email").fill(process.env.ADMIN_EMAIL ?? "");
+  await page.getByLabel("Password").fill("not-the-password");
+  await page.getByRole("button", { name: "Sign in" }).click();
+  await expect(page.locator("main").getByRole("alert")).toHaveText("The email or password is not correct.");
+
+  // The email survives the failed attempt, and the right password returns to the page that was asked for.
+  await expect(page.getByLabel("Email")).toHaveValue(process.env.ADMIN_EMAIL ?? "");
+  await page.getByLabel("Password").fill(process.env.ADMIN_PASSWORD ?? "");
+  await page.getByRole("button", { name: "Sign in" }).click();
+  await expect(page).toHaveURL(new RegExp(`/meetings/${id}/edit$`));
+  await expect(page.getByRole("heading", { level: 1, name: "Edit meeting" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Sign out" })).toBeVisible();
+
+  // Signed-in leaders who open /login go to the list, which now shows the controls.
+  await page.goto("/login");
+  await expect(page).toHaveURL(/\/meetings$/);
+  await expect(page.getByRole("link", { name: "New meeting" })).toBeVisible();
+
+  await page.getByRole("button", { name: "Sign out" }).click();
+  await expect(page).toHaveURL(/\/$/);
+  await expect(page.getByRole("link", { name: "Leader sign in" })).toBeVisible();
+  await page.goto("/meetings/new");
+  await expect(page).toHaveURL(/\/login\?callbackUrl=/);
+});
+
+test("pages publish a title, description and Open Graph image", async ({ page, request }) => {
+  const id = await meetingIdFor(REGULAR_DATE);
+  await page.goto("/");
+  await expect(page).toHaveTitle("Bariga Ward | Sacrament Meetings");
+  await expect(page.locator('meta[name="description"]')).toHaveAttribute("content", /sacrament meeting programmes/);
+  const ogImage = await page.locator('meta[property="og:image"]').getAttribute("content");
+  expect(ogImage).toContain("/opengraph-image");
+  const image = await request.get(new URL(ogImage ?? "").pathname);
+  expect(image.status()).toBe(200);
+  expect(image.headers()["content-type"]).toBe("image/png");
+
+  await page.goto("/meetings");
+  await expect(page).toHaveTitle("Meetings | Bariga Ward");
+  await page.goto(`/meetings/${id}`);
+  await expect(page).toHaveTitle(`Sacrament meeting, ${formatMeetingDate(REGULAR_DATE)} | Bariga Ward`);
+  await expect(page.locator('meta[name="description"]')).toHaveAttribute("content", new RegExp(`^Order of service for ${formatMeetingDate(REGULAR_DATE)}`));
+  await expect(page.locator('meta[property="og:image"]')).toHaveCount(1);
+});
+
 test.describe("leader forms", () => {
   test.beforeAll(deleteFormTestMeetings);
   test.afterAll(deleteFormTestMeetings);
+  test.beforeEach(async ({ page }) => signIn(page));
 
   test("create form validates on the server, announces field errors, and keeps what was typed", async ({ page }) => {
     await page.goto("/meetings");
@@ -549,7 +618,9 @@ for (const width of [1440, 390]) {
     await page.setViewportSize({ width, height: 1000 });
     const id = await meetingIdFor(REGULAR_DATE);
     const total = await firstPageCount();
-    for (const [name, path] of [["home", "/"], ["meetings", "/meetings"], ["agenda", `/meetings/${id}`], ["not-found", "/meetings/99999"], ["empty", "/meetings?date=2030-01-06"], ["create", "/meetings/new"], ["edit", `/meetings/${id}/edit`], ["edit-not-found", "/meetings/99999/edit"]]) {
+    // Signed-out pages come first; the leader pages after "login" need a session.
+    for (const [name, path] of [["home", "/"], ["meetings", "/meetings"], ["agenda", `/meetings/${id}`], ["not-found", "/meetings/99999"], ["empty", "/meetings?date=2030-01-06"], ["login", "/login"], ["create", "/meetings/new"], ["edit", `/meetings/${id}/edit`], ["edit-not-found", "/meetings/99999/edit"]]) {
+      if (name === "create") await signIn(page);
       await page.goto(path);
       await expect(page.locator("main h1")).toBeVisible();
       if (name === "meetings") await expect(page.locator(".meeting-card")).toHaveCount(total);

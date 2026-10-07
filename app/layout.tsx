@@ -16,9 +16,23 @@ const lora = Lora({
   subsets: ["latin"],
 });
 
+// Vercel sets the production domain; local builds fall back to the dev server.
+const siteUrl = process.env.VERCEL_PROJECT_PRODUCTION_URL
+  ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`
+  : "http://localhost:3000";
+const siteName = `${WARD_NAME} Sacrament Meetings`;
+const siteDescription = `View weekly sacrament meeting programmes, hymns, speakers, and announcements for ${WARD_NAME}.`;
+
+// Site-wide defaults. Pages override title and description; the template brands every title.
+// app/opengraph-image.tsx supplies the og:image for every route. Next fills og:title and
+// og:description from each page's own title and description.
 export const metadata: Metadata = {
+  metadataBase: new URL(siteUrl),
+  applicationName: siteName,
   title: { default: `${WARD_NAME} | Sacrament Meetings`, template: `%s | ${WARD_NAME}` },
-  description: "View weekly sacrament meeting programmes, hymns, speakers, and announcements for " + WARD_NAME + ".",
+  description: siteDescription,
+  openGraph: { type: "website", siteName },
+  twitter: { card: "summary_large_image" },
 };
 
 export default function RootLayout({ children }: { children: ReactNode }): ReactElement {

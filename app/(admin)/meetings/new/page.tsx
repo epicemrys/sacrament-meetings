@@ -3,9 +3,15 @@ import type { Metadata } from "next";
 import type { ReactElement } from "react";
 import { CreateMeetingForm } from "@/components/MeetingForm";
 import { emptyMeetingFormValues } from "@/lib/meeting-form";
+import { requireLeader } from "@/lib/session";
 
-export const metadata: Metadata = { title: "Create meeting" };
-export default function NewMeetingPage(): ReactElement {
+export const metadata: Metadata = {
+  title: "Create meeting",
+  description: "Plan a new sacrament meeting programme.",
+  robots: { index: false },
+};
+export default async function NewMeetingPage(): Promise<ReactElement> {
+  await requireLeader("/meetings/new");
   return (
     <div className="mx-auto max-w-4xl">
       <Link href="/meetings" className="mb-5 inline-flex min-h-11 items-center text-sm text-link">← All meetings</Link>
