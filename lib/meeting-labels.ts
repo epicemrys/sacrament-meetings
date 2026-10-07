@@ -7,3 +7,5 @@ export const meetingTypeLabels: Record<MeetingType, string> = {
   general: "General conference",
   special: "Special meeting",
 };
+
+export const meetingTypes = Object.keys(meetingTypeLabels) as [MeetingType, ...MeetingType[]];

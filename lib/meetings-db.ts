@@ -1,5 +1,5 @@
-import { neon } from "@neondatabase/serverless";
-import { getMostRecentSunday, getWardDate } from "./dates";
+import { getThisSunday, getWardDate } from "./dates";
+import { sql } from "./db";
 import { MEETINGS_PAGE_SIZE } from "./pagination";
 import type { GospelReference, Hymn, SacramentMeeting, SpeakerItem, WardBusinessItem } from "./types";
 
@@ -26,16 +26,6 @@ interface MeetingRow {
   speakers: SpeakerItem[] | null;
   closing_hymn: Hymn;
   closing_prayer: string;
-}
-
-let client: ReturnType<typeof neon> | null = null;
-function sql(): ReturnType<typeof neon> {
-  if (!client) {
-    const url = process.env.POSTGRES_URL;
-    if (!url) throw new Error("POSTGRES_URL is not set.");
-    client = neon(url);
-  }
-  return client;
 }
 
 function toMeeting(row: MeetingRow): SacramentMeeting {
@@ -72,6 +62,7 @@ export async function getMeetings(
   now: Date = new Date(),
 ): Promise<SacramentMeeting[]> {
   const today = getWardDate(now);
+  const sunday = getThisSunday(now);
   const pattern = likePattern(query);
   const limit = page ? MEETINGS_PAGE_SIZE : null;
   const offset = page ? (page - 1) * MEETINGS_PAGE_SIZE : 0;
@@ -86,7 +77,8 @@ export async function getMeetings(
            OR conducting ILIKE ${pattern}
            OR meeting_type ILIKE ${pattern}
            OR EXISTS (SELECT 1 FROM jsonb_array_elements(speakers) AS s WHERE s->>'name' ILIKE ${pattern}))
-    ORDER BY date > ${today}::date,
+    -- This Sunday first, then upcoming meetings (nearest first), then past meetings (newest first).
+    ORDER BY CASE WHEN date = ${sunday}::date THEN 0 WHEN date > ${today}::date THEN 1 ELSE 2 END,
              CASE WHEN date > ${today}::date THEN date END ASC,
              date DESC
     LIMIT ${limit}::int OFFSET ${offset}::int`;
@@ -124,21 +116,82 @@ export async function getMeetingById(id: number): Promise<SacramentMeeting | nul
 }
 
 export async function getCurrentMeeting(now: Date = new Date()): Promise<SacramentMeeting | null> {
-  return (await getMeetings({ date: getMostRecentSunday(now) }, now))[0] ?? null;
+  return (await getMeetings({ date: getThisSunday(now) }, now))[0] ?? null;
 }
 
-// Mutations are wired to the database in Week 04 when the forms are built.
+// The date column is UNIQUE, so a second programme for the same Sunday is rejected.
+export class MeetingDateTakenError extends Error {
+  constructor(date: string) {
+    super(`A meeting already exists on ${date}.`);
+    this.name = "MeetingDateTakenError";
+  }
+}
+
+function isDateTaken(error: unknown): boolean {
+  return error instanceof Error && "code" in error && error.code === "23505"
+    && "constraint" in error && error.constraint === "meetings_date_key";
+}
+
+// JSONB values are sent as JSON text; undefined becomes NULL so COALESCE keeps the stored value.
+function json(value: unknown): string | null {
+  return value === undefined ? null : JSON.stringify(value);
+}
+
 export async function addMeeting(meeting: Omit<SacramentMeeting, "id">): Promise<SacramentMeeting> {
-  void meeting;
-  throw new Error("addMeeting is not implemented yet.");
+  try {
+    const rows = await sql()`
+      INSERT INTO meetings (date, meeting_type, presiding, conducting, announcements,
+                            opening_hymn, opening_prayer, ward_business, stake_business,
+                            sacrament_hymn, speakers, closing_hymn, closing_prayer)
+      VALUES (${meeting.date}::date, ${meeting.meetingType}, ${meeting.presiding}, ${meeting.conducting},
+              ${meeting.announcements ?? []}::text[], ${json(meeting.openingHymn)}::jsonb, ${meeting.openingPrayer},
+              ${json(meeting.wardBusiness)}::jsonb, ${meeting.stakeBusiness}, ${json(meeting.sacramentHymn)}::jsonb,
+              ${json(meeting.speakers)}::jsonb, ${json(meeting.closingHymn)}::jsonb, ${meeting.closingPrayer})
+      RETURNING id, date::text AS date, meeting_type, presiding, conducting, announcements,
+                opening_hymn, opening_prayer, ward_business, stake_business,
+                sacrament_hymn, speakers, closing_hymn, closing_prayer`;
+    const [row] = rows as MeetingRow[];
+    if (!row) throw new Error("The database did not return the new meeting.");
+    return toMeeting(row);
+  } catch (error) {
+    if (isDateTaken(error)) throw new MeetingDateTakenError(meeting.date);
+    throw error;
+  }
 }
 
+// Fields left out of `changes` keep their stored values.
 export async function updateMeeting(id: number, changes: Partial<Omit<SacramentMeeting, "id">>): Promise<SacramentMeeting | null> {
-  void id; void changes;
-  throw new Error("updateMeeting is not implemented yet.");
+  if (id > MAX_MEETING_ID) return null;
+  try {
+    const rows = await sql()`
+      UPDATE meetings SET
+        date = COALESCE(${changes.date ?? null}::date, date),
+        meeting_type = COALESCE(${changes.meetingType ?? null}::text, meeting_type),
+        presiding = COALESCE(${changes.presiding ?? null}::text, presiding),
+        conducting = COALESCE(${changes.conducting ?? null}::text, conducting),
+        announcements = COALESCE(${changes.announcements ?? null}::text[], announcements),
+        opening_hymn = COALESCE(${json(changes.openingHymn)}::jsonb, opening_hymn),
+        opening_prayer = COALESCE(${changes.openingPrayer ?? null}::text, opening_prayer),
+        ward_business = COALESCE(${json(changes.wardBusiness)}::jsonb, ward_business),
+        stake_business = COALESCE(${changes.stakeBusiness ?? null}::boolean, stake_business),
+        sacrament_hymn = COALESCE(${json(changes.sacramentHymn)}::jsonb, sacrament_hymn),
+        speakers = COALESCE(${json(changes.speakers)}::jsonb, speakers),
+        closing_hymn = COALESCE(${json(changes.closingHymn)}::jsonb, closing_hymn),
+        closing_prayer = COALESCE(${changes.closingPrayer ?? null}::text, closing_prayer)
+      WHERE id = ${id}
+      RETURNING id, date::text AS date, meeting_type, presiding, conducting, announcements,
+                opening_hymn, opening_prayer, ward_business, stake_business,
+                sacrament_hymn, speakers, closing_hymn, closing_prayer`;
+    const [row] = rows as MeetingRow[];
+    return row ? toMeeting(row) : null;
+  } catch (error) {
+    if (isDateTaken(error) && changes.date) throw new MeetingDateTakenError(changes.date);
+    throw error;
+  }
 }
 
 export async function deleteMeeting(id: number): Promise<boolean> {
-  void id;
-  throw new Error("deleteMeeting is not implemented yet.");
+  if (id > MAX_MEETING_ID) return false;
+  const rows = await sql()`DELETE FROM meetings WHERE id = ${id} RETURNING id`;
+  return (rows as { id: number }[]).length > 0;
 }

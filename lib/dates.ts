@@ -9,11 +9,12 @@ export function getWardDate(now: Date = new Date()): string {
   return `${part("year")}-${part("month")}-${part("day")}`;
 }
 
+// "This Sunday" is the Sunday that ends the current week: today on a Sunday, otherwise the coming Sunday.
 // Do calendar arithmetic in UTC after finding the ward's local calendar date.
 // This avoids shifting a Sunday into Saturday with toISOString() in local time.
-export function getMostRecentSunday(now: Date = new Date()): string {
+export function getThisSunday(now: Date = new Date()): string {
   const sunday = new Date(`${getWardDate(now)}T12:00:00Z`);
-  sunday.setUTCDate(sunday.getUTCDate() - sunday.getUTCDay());
+  sunday.setUTCDate(sunday.getUTCDate() + ((7 - sunday.getUTCDay()) % 7));
   return sunday.toISOString().slice(0, 10);
 }
 

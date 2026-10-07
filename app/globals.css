@@ -8,6 +8,7 @@
   --sage: #e6ece3;
   --line: #d8dfd6;
   --gold: #80642d;
+  --error: #b42318;
 }
 
 @theme inline {
@@ -22,6 +23,7 @@
   --color-sage: var(--sage);
   --color-line: var(--line);
   --color-gold: var(--gold);
+  --color-error: var(--error);
 }
 
 body {
@@ -37,6 +39,11 @@ body {
   .button-secondary { @apply inline-flex min-h-11 items-center justify-center gap-3 rounded-lg border border-ink bg-paper px-5 py-3 text-sm font-semibold text-ink transition-colors hover:bg-sage; }
   .text-link { @apply rounded-sm font-medium underline decoration-current underline-offset-4 hover:text-gold; }
   .agenda-heading { @apply border-b border-line pb-3 font-display text-xl; }
+  .button-danger { @apply inline-flex min-h-11 items-center justify-center gap-3 rounded-lg border border-error bg-paper px-5 py-3 text-sm font-semibold text-error transition-colors hover:bg-[#fdecea] disabled:opacity-70; }
+  .field-control { @apply min-h-11 w-full rounded-lg border border-muted bg-white px-3 py-2 text-ink; }
+  .field-control[aria-invalid="true"] { @apply border-2 border-error; }
+  .field-error { @apply mt-2 text-sm font-medium text-error; }
+  .form-message { @apply rounded-xl border-2 border-error bg-paper p-4 text-sm font-semibold text-error; }
 }
 
 :focus-visible { outline: 3px solid #80642d; outline-offset: 4px; }
